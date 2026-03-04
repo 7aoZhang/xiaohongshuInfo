@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "XHS 悬浮小球",
+  "version": "0.1.0",
+  "description": "当访问 xiaohongshu.com 时在右侧显示淡蓝色悬浮小球",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.xiaohongshu.com/*",
+        "http://*.xiaohongshu.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}
