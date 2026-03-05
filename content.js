@@ -247,6 +247,160 @@
       }
       return notes
     }
+    function formatDatePart(n) {
+      return n < 10 ? '0' + n : String(n)
+    }
+    function buildExportRows(data) {
+      var rows = []
+      rows.push(['字段', '值'])
+      rows.push(['昵称', data.nickname || ''])
+      rows.push(['关注', data.following != null ? data.following : ''])
+      rows.push(['粉丝', data.followers != null ? data.followers : ''])
+      rows.push(['获赞与收藏', data.likesFavs != null ? data.likesFavs : ''])
+      rows.push(['小红书号', data.xhsId || ''])
+      rows.push(['IP属地', data.ipLocation || ''])
+      rows.push(['个性签名', data.signature || ''])
+      rows.push([])
+      rows.push(['笔记索引', '标题', '状态', '点赞数', '自己已点赞', '图片链接'])
+      var notes = Array.isArray(data.notes) ? data.notes : []
+      for (var i = 0; i < notes.length; i++) {
+        var n = notes[i]
+        rows.push([n.index, n.title || '', n.status || '', n.like != null ? n.like : '', n.selfLiked ? '是' : '否', n.imageUrl || ''])
+      }
+      return rows
+    }
+    function escapeCsvCell(v) {
+      var s = v == null ? '' : String(v)
+      if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"'
+      return s
+    }
+    function rowsToCsv(rows) {
+      var lines = []
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i]
+        var cols = []
+        for (var j = 0; j < row.length; j++) cols.push(escapeCsvCell(row[j]))
+        lines.push(cols.join(','))
+      }
+      return '\ufeff' + lines.join('\r\n')
+    }
+    function escapeXml(v) {
+      return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;')
+    }
+    function rowsToXlsxXml(rows) {
+      var parts = []
+      parts.push('<?xml version="1.0"?>')
+      parts.push('<?mso-application progid="Excel.Sheet"?>')
+      parts.push('<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">')
+      parts.push('<Worksheet ss:Name="xhs_data"><Table>')
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i]
+        parts.push('<Row>')
+        for (var j = 0; j < row.length; j++) {
+          var cell = row[j]
+          var isNumber = typeof cell === 'number' || (String(cell).match(/^-?\d+(\.\d+)?$/) && cell !== '')
+          var t = isNumber ? 'Number' : 'String'
+          parts.push('<Cell><Data ss:Type="' + t + '">' + escapeXml(cell) + '</Data></Cell>')
+        }
+        parts.push('</Row>')
+      }
+      parts.push('</Table></Worksheet></Workbook>')
+      return parts.join('')
+    }
+    function escapeMd(v) {
+      return String(v == null ? '' : v).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+    }
+    function dataToMarkdown(payload) {
+      var data = payload.data || {}
+      var notes = Array.isArray(data.notes) ? data.notes : []
+      var lines = []
+      lines.push('# 小红书数据导出')
+      lines.push('')
+      lines.push('- 导出时间: ' + payload.exportedAt)
+      lines.push('- 页面地址: ' + payload.pageUrl)
+      lines.push('')
+      lines.push('## 用户信息')
+      lines.push('')
+      lines.push('| 字段 | 值 |')
+      lines.push('| --- | --- |')
+      lines.push('| 昵称 | ' + escapeMd(data.nickname || '') + ' |')
+      lines.push('| 关注 | ' + escapeMd(data.following != null ? data.following : '') + ' |')
+      lines.push('| 粉丝 | ' + escapeMd(data.followers != null ? data.followers : '') + ' |')
+      lines.push('| 获赞与收藏 | ' + escapeMd(data.likesFavs != null ? data.likesFavs : '') + ' |')
+      lines.push('| 小红书号 | ' + escapeMd(data.xhsId || '') + ' |')
+      lines.push('| IP属地 | ' + escapeMd(data.ipLocation || '') + ' |')
+      lines.push('| 个性签名 | ' + escapeMd(data.signature || '') + ' |')
+      lines.push('')
+      lines.push('## 笔记列表')
+      lines.push('')
+      lines.push('| 索引 | 标题 | 状态 | 点赞数 | 自己已点赞 | 图片链接 |')
+      lines.push('| --- | --- | --- | --- | --- | --- |')
+      for (var i = 0; i < notes.length; i++) {
+        var n = notes[i]
+        lines.push(
+          '| ' +
+            escapeMd(n.index) +
+            ' | ' +
+            escapeMd(n.title || '') +
+            ' | ' +
+            escapeMd(n.status || '') +
+            ' | ' +
+            escapeMd(n.like != null ? n.like : '') +
+            ' | ' +
+            escapeMd(n.selfLiked ? '是' : '否') +
+            ' | ' +
+            escapeMd(n.imageUrl || '') +
+            ' |'
+        )
+      }
+      return lines.join('\n')
+    }
+    function triggerDownload(content, mimeType, fileName) {
+      var blob = new Blob([content], { type: mimeType })
+      var url = URL.createObjectURL(blob)
+      var a = document.createElement('a')
+      a.href = url
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    }
+    function downloadAllData(data, format) {
+      var now = new Date()
+      var ts =
+        now.getFullYear() +
+        formatDatePart(now.getMonth() + 1) +
+        formatDatePart(now.getDate()) +
+        '_' +
+        formatDatePart(now.getHours()) +
+        formatDatePart(now.getMinutes()) +
+        formatDatePart(now.getSeconds())
+      var payload = {
+        exportedAt: now.toISOString(),
+        pageUrl: location.href,
+        data: data
+      }
+      var rows = buildExportRows(data)
+      if (format === 'csv') {
+        triggerDownload(rowsToCsv(rows), 'text/csv;charset=utf-8', 'xhs_data_' + ts + '.csv')
+        return
+      }
+      if (format === 'xlsx') {
+        triggerDownload(rowsToXlsxXml(rows), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=utf-8', 'xhs_data_' + ts + '.xlsx')
+        return
+      }
+      if (format === 'md') {
+        triggerDownload(dataToMarkdown(payload), 'text/markdown;charset=utf-8', 'xhs_data_' + ts + '.md')
+        return
+      }
+      triggerDownload(JSON.stringify(payload, null, 2), 'application/json;charset=utf-8', 'xhs_data_' + ts + '.json')
+    }
     function createModal(data, onClose) {
       var overlay = document.createElement('div')
       overlay.id = 'xhs-info-overlay'
@@ -309,6 +463,47 @@
       closeBtn.addEventListener('mouseleave', function () {
         closeBtn.style.background = '#f8fafc'
       })
+      var downloadBtn = document.createElement('button')
+      downloadBtn.textContent = '下载数据'
+      downloadBtn.style.marginTop = '8px'
+      downloadBtn.style.padding = '6px 12px'
+      downloadBtn.style.border = '1px solid #bfdbfe'
+      downloadBtn.style.borderRadius = '8px'
+      downloadBtn.style.background = '#e0f2fe'
+      downloadBtn.style.cursor = 'pointer'
+      downloadBtn.style.marginRight = '8px'
+      downloadBtn.addEventListener('mouseenter', function () {
+        downloadBtn.style.background = '#bae6fd'
+      })
+      downloadBtn.addEventListener('mouseleave', function () {
+        downloadBtn.style.background = '#e0f2fe'
+      })
+      var formatSelect = document.createElement('select')
+      formatSelect.style.marginTop = '8px'
+      formatSelect.style.padding = '6px 8px'
+      formatSelect.style.border = '1px solid #cbd5e1'
+      formatSelect.style.borderRadius = '8px'
+      formatSelect.style.background = '#fff'
+      formatSelect.style.marginRight = '8px'
+      var optJson = document.createElement('option')
+      optJson.value = 'json'
+      optJson.textContent = 'JSON'
+      var optXlsx = document.createElement('option')
+      optXlsx.value = 'xlsx'
+      optXlsx.textContent = 'XLSX'
+      var optCsv = document.createElement('option')
+      optCsv.value = 'csv'
+      optCsv.textContent = 'CSV'
+      var optMd = document.createElement('option')
+      optMd.value = 'md'
+      optMd.textContent = 'Markdown'
+      formatSelect.appendChild(optJson)
+      formatSelect.appendChild(optXlsx)
+      formatSelect.appendChild(optCsv)
+      formatSelect.appendChild(optMd)
+      downloadBtn.addEventListener('click', function () {
+        downloadAllData(data, formatSelect.value)
+      })
       card.appendChild(title)
       card.appendChild(row('昵称', data.nickname || null))
       card.appendChild(row('关注', data.following != null ? data.following : null))
@@ -356,7 +551,13 @@
           card.appendChild(block)
         }
       }
-      card.appendChild(closeBtn)
+      var actionWrap = document.createElement('div')
+      actionWrap.style.display = 'flex'
+      actionWrap.style.alignItems = 'center'
+      actionWrap.appendChild(formatSelect)
+      actionWrap.appendChild(downloadBtn)
+      actionWrap.appendChild(closeBtn)
+      card.appendChild(actionWrap)
       overlay.appendChild(card)
       function close() {
         if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay)
